@@ -1,0 +1,57 @@
+# Criando o Docker Compose:
+# Só os SERVIÇOS. O Spark roda local, no Python do aluno (PySpark local[N]).
+#   MinIO (object storage) | Postgres + pgvector (serving + vetorial) | Metabase (BI)
+# Subir:  docker compose up -d      Parar: docker compose down      Zerar tudo: docker compose down -v
+# 05/11/2026: Postgres e Metabase acrescentados (copiados do repositório do professor) para o 03_gold.
+
+services:
+  minio:
+    image: ghcr.io/coollabsio/minio
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16          # Postgres 16 com a extensão pgvector
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: serving
+    ports: ["${PG_PORT}:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro     # roda só na 1a criação do volume
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d serving"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 512m
+
+  metabase:
+    image: metabase/metabase:v0.55.14.2
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      JAVA_OPTS: "-Xmx768m"
+    ports: ["3000:3000"]
+    volumes: [metabase_data:/metabase-data]
+    mem_limit: 1g
+
+volumes:
+  minio_data:
+  pg_data:
+  metabase_data:
